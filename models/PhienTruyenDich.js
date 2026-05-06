@@ -20,7 +20,7 @@ const PhienTruyenDich = db.define('PhienTruyenDich', {
         defaultValue: 'Đang truyền' // Có thể là: Đang truyền, Cảnh báo, Đã xong
     }
 }, {
-    tableName: 'phien_truyen_dich',
+    tableName: 'infusion_sessions',
     timestamps: true // Tự động ghi lại thời gian bắt đầu truyền (createdAt)
 });
 

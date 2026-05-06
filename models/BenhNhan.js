@@ -20,7 +20,7 @@ const BenhNhan = db.define('BenhNhan', {
         type: DataTypes.STRING
     }
 }, {
-    tableName: 'benh_nhan', // Tên bảng dưới MySQL
+    tableName: 'patient_profiles', // Tên bảng dưới MySQL
     timestamps: false       // Tắt tính năng tự động ghi giờ tạo
 });
 

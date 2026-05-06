@@ -22,7 +22,7 @@ const TaiKhoan = db.define('TaiKhoan', {
         defaultValue: 'doctor' // Nếu không nói gì, mặc định tạo ra là Bác sĩ
     }
 }, {
-    tableName: 'tai_khoan',
+    tableName: 'users',
     timestamps: true // Bật cái này để biết tài khoản được tạo ngày nào
 });
 
