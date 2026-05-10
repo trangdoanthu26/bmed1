@@ -1,5 +1,5 @@
-const NhatKyTruyen = require('../models/NhatKyTruyen'); // Trỏ đúng tên file Model của bạn
-const CanhBao = require('../models/CanhBao'); 
+const InfusionIssue = require('../models/InfusionIssue'); // Trỏ đúng tên file Model của bạn
+const InfusionAlert = require('../models/InfusionAlert'); 
 const { v4: uuidv4 } = require('uuid'); // Thư viện tạo mã ID ngẫu nhiên giống trong DB của bạn
 
 exports.nhanDuLieuESP = async (req, res) => {
@@ -23,7 +23,7 @@ exports.nhanDuLieuESP = async (req, res) => {
         }
 
         // --- KHỐI LOGIC 2: LƯU NHẬT KÝ VÀO DATABASE ---
-        await NhatKyTruyen.create({
+        await InfusionIssue.create({
             id: uuidv4(), // Tự động đẻ ra cái chuỗi dài ngoằng như trong DB của bạn
             session_id: session_id,
             current_drop_rate: current_drop_rate,
