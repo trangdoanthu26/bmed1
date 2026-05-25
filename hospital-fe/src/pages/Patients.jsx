@@ -8,9 +8,28 @@ import { useApp } from '../context/AppContext'
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 async function apiFetch(url, opts = {}) {
-  const res = await fetch(API + url, opts)
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`)
-  return res.json()
+  // Lấy token từ bộ nhớ (Nhóm bạn thường lưu tên là 'token' hoặc 'accessToken')
+  const token = localStorage.getItem('token'); 
+
+  // Tạo header chứa token mang đi báo danh
+  const headers = {
+    'Content-Type': 'application/json',
+    ...opts.headers,
+  };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`; // Nhét thẻ ID vào đây
+  }
+
+  // Gửi request kèm theo gói opts đã được thêm headers
+  const res = await fetch(API + url, { ...opts, headers });
+  
+  if (!res.ok) {
+     const errData = await res.json().catch(() => ({}));
+     throw new Error(errData.error || errData.message || `HTTP ${res.status}`);
+  }
+  
+  return res.json();
 }
 
 function groupByPatient(sessions) {
@@ -45,24 +64,35 @@ function PatientDetail({ session, onBack }) {
   const isLechTocDo = live.dropRate > 0 && prescribed > 0 &&
     Math.abs(live.dropRate - prescribed) / prescribed >= 0.15
 
-  const fetchMetrics = async () => {
+const fetchMetrics = async () => {
     try {
-      const data = await apiFetch(`/api/sessions/${session.id}/metrics`)
+      const resData = await apiFetch(`/api/sessions/${session.id}/metrics`)
+      
+      // Xử lý "lưới an toàn": Nếu Backend trả về Object { data: [...] } thì lấy mảng bên trong
+      const data = Array.isArray(resData) ? resData : (resData.data || []);
+      
+      // Bật F12 lên để xem mảng dữ liệu đã chui vào được đây chưa nhé
+      console.log("Dữ liệu Chart nhận được:", data); 
+
       if (data.length > 0) {
         const pts = data.map(p => ({
-          time:   new Date(p.recorded_at).getTime(),
-          tocDo:  p.current_drop_rate,
-          theeTich: parseFloat((p.current_weight - 30).toFixed(1)), // trừ vỏ chai
-          conLai: p.remaining_time,
+          time:   new Date(p.recorded_at || p.recordedAt).getTime(),
+          // Bắt buộc ép kiểu Number vì biểu đồ không vẽ được String
+          tocDo:  Number(p.current_drop_rate || p.currentDropRate) || 0,
+          theeTich: parseFloat(((Number(p.current_weight || p.currentWeight) || 0) - 30).toFixed(1)), 
+          conLai: p.remaining_time || p.remainingTime,
         }))
+        
         setChart(pts)
         const last = pts[pts.length - 1]
+        // Cập nhật lại số liệu to đùng trên màn hình
         setLive({ dropRate: last.tocDo, volumeRemaining: last.theeTich, remainingTime: last.conLai })
       }
-    } catch (e) { console.error(e) }
+    } catch (e) { 
+        console.error("Lỗi khi kéo dữ liệu biểu đồ:", e) 
+    }
     finally { setLoading(false) }
   }
-
   useEffect(() => {
     fetchMetrics()
     timerRef.current = setInterval(fetchMetrics, 5000)
@@ -166,7 +196,7 @@ function PatientDetail({ session, onBack }) {
                   <ReferenceLine y={prescribed} stroke="#16A34A" strokeDasharray="4 4" label={{ value:'Mục tiêu', position:'right', fontSize:10, fill:'#16A34A' }} />
                   <ReferenceLine y={upper} stroke="#EA580C" strokeDasharray="3 3" />
                   <ReferenceLine y={lower} stroke="#EA580C" strokeDasharray="3 3" />
-                  <Line type="monotone" dataKey="tocDo" stroke={isLechTocDo ? '#DC2626' : '#2563EB'} strokeWidth={2} dot={false} isAnimationActive={false} name="Tốc độ" />
+                  <Line type="monotone" dataKey="tocDo" stroke={isLechTocDo ? '#DC2626' : '#2563EB'} strokeWidth={2} dot={chart.length === 1 ? { r: 3, fill: '#2563EB' } : false} isAnimationActive={false} name="Tốc độ" />
                 </ComposedChart>
               </ResponsiveContainer>
             )
@@ -189,7 +219,7 @@ function PatientDetail({ session, onBack }) {
                   <YAxis tick={{ fontSize:11, fill:'#9CA3AF' }} label={{ value:'ml', angle:-90, position:'insideLeft', style:{ fontSize:11, fill:'#9CA3AF' } }} />
                   <Tooltip labelFormatter={ts => new Date(ts).toLocaleTimeString('vi-VN')} formatter={v => [`${v} ml`, 'Thể tích']} />
                   <ReferenceLine y={20} stroke="#DC2626" strokeDasharray="4 4" label={{ value:'Ngưỡng cảnh báo (20ml)', position:'right', fontSize:10, fill:'#DC2626' }} />
-                  <Area type="monotone" dataKey="theeTich" stroke="#2563EB" fill="#EFF6FF" strokeWidth={2} dot={false} isAnimationActive={false} name="Thể tích còn lại" />
+                  <Area type="monotone" dataKey="theeTich" stroke="#2563EB" fill="#EFF6FF" strokeWidth={2} dot={chart.length === 1 ? { r: 3, fill: '#2563EB' } : false} isAnimationActive={false} name="Thể tích còn lại" />
                 </ComposedChart>
               </ResponsiveContainer>
             )
