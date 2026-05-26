@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
 
-const API = 'http://localhost:8000/api'
+const API = (import.meta.env.VITE_API_URL || 'http://localhost:8000') + '/api'
 // =================================================================
 // BỘ LỌC TỰ ĐỘNG: Tự động đính Token bảo mật vào TẤT CẢ request gửi lên BE
 // =================================================================
