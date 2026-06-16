@@ -18,11 +18,20 @@ const __dirname  = dirname(__filename);
 const app = express();
 
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  // Sử dụng mảng để khai báo các tên miền được phép gọi API
+  origin: [
+    'http://localhost:5173', 
+    'https://bmed1-2.onrender.com' // Tự thay bằng link thật của bmed1-2 (Frontend)
+  ],
   methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
   credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
 app.use(express.json());
+
+// ── Pool MySQL2 ──────────────────────────────────────────────
+import mysql from 'mysql2/promise';
 
 // ── Pool MySQL2 ──────────────────────────────────────────────
 import mysql from 'mysql2/promise';
