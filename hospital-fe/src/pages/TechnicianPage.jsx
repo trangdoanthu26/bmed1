@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
 import { useAuth } from '../context/AuthContext'
 
-const API = (import.meta.env.VITE_API_URL || 'http://localhost:8000') + '/api'
+const API = (import.meta.env.VITE_API_URL || 'https://bmed1-1.onrender.com') + '/api'
 
 const STATUS_LABEL = {
   available:  { text: 'Sẵn sàng',        color: '#16a34a', bg: '#dcfce7' },
