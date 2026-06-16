@@ -5,7 +5,7 @@ import {
 } from 'recharts'
 import { useApp } from '../context/AppContext'
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const API = import.meta.env.VITE_API_URL || 'https://bmed1-1.onrender.com'
 
 async function apiFetch(url, opts = {}) {
   // Lấy token từ bộ nhớ (Nhóm bạn thường lưu tên là 'token' hoặc 'accessToken')
