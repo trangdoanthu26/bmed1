@@ -174,5 +174,4 @@ exports.nhanDuLieuESP = async (req, res) => {
 };
 
 exports.clearSessionBuffer = clearBuffer;
-// Dán cái này vào cuối cùng file DeviceController.js để bọc lót tên hàm
-exports.nhanDuLieuESP = exports.capNhatDuLieu;
+
