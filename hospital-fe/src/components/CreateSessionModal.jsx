@@ -68,14 +68,14 @@ export default function CreateSessionModal({ onClose }) {
             <input placeholder="" value={form.condition} onChange={e => set('condition', e.target.value)} />
           </div>
           <div className="form-group">
-            <label>Thiết bị ESP32</label>
+            <label>Thiết bị ESP32 <span style={{color:'red'}}>*</span></label>
             <select value={form.deviceId} onChange={e => set('deviceId', e.target.value)}>
               <option value="">Chọn thiết bị</option>
-              {devices.length > 0
-                ? devices.map(d => <option key={d.id} value={d.id}>{d.name ?? d.id}</option>)
-                : ['ESP32-001','ESP32-002','ESP32-003','ESP32-004','ESP32-005'].map(d =>
-                    <option key={d} value={d}>{d}</option>
+              {devices.filter(d => d.status === 'available').length > 0
+                ? devices.filter(d => d.status === 'available').map(d =>
+                    <option key={d.id} value={d.id}>{d.label || d.macAddress}</option>
                   )
+                : <option value="" disabled>Không có thiết bị nào sẵn sàng</option>
               }
             </select>
           </div>

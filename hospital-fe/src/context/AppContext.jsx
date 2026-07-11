@@ -34,19 +34,19 @@ export function AppProvider({ children }) {
 
   // CHẶT CHẼ: Đồng bộ công thức tính trạng thái màu sắc dựa trên các trường chuẩn của DB
   const getStatus = useCallback((s) => {
-    // Nếu phiên đã kết thúc hoặc hủy thì cho màu xám rảnh
-    if (s.status === 'Hoàn thành' || s.status === 'Đã hủy') return 'gray'
+    // Nếu phiên đã kết thúc thì cho màu xám rảnh
+    if (s.status === 'completed') return 'gray'
 
-    const currentRate = parseFloat(s.current_drop_rate !== undefined ? s.current_drop_rate : (s.giot_phut || 0))
-    const targetRate  = parseFloat(s.target_drop_rate || s.toc_do_y_lenh || 0)
-    const remaining   = parseFloat(s.current_weight !== undefined ? s.current_weight : (s.khoi_luong_con_lai || 0))
+    const currentRate = parseFloat(s.dropRate ?? 0)
+    const targetRate  = parseFloat(s.prescribedDropRate ?? 0)
+    const remaining   = parseFloat(s.volumeRemaining ?? 0)
 
-    // 1. Kiểm tra ưu tiên số 1: Lỗi tốc độ lệch >= 15%
+    // 1. Kiểm tra ưu tiên số 1: Lỗi tốc độ lệch >= ngưỡng cài đặt
     const phanTramLech = targetRate > 0 ? (Math.abs(currentRate - targetRate) / targetRate) * 100 : 0
-    if (phanTramLech >= rateThreshold || s.status === 'Tốc độ bất thường') return 'red'
+    if (phanTramLech >= rateThreshold || s.status === 'urgent') return 'red'
 
-    // 2. Kiểm tra ưu tiên số 2: Sắp hết dịch <= 20ml
-    if ((remaining <= warnThreshold && remaining > 0) || s.status === 'Sắp hết') return 'orange'
+    // 2. Kiểm tra ưu tiên số 2: Sắp hết dịch <= ngưỡng cài đặt
+    if ((remaining <= warnThreshold && remaining > 0) || s.status === 'warning') return 'orange'
 
     // 3. Trạng thái hoạt động bình thường
     return 'green'
@@ -134,17 +134,13 @@ const handleAlertAction = async ({ session_id, action, alert_id, device_id }) =>
 // Sửa hàm repairDone ngay bên dưới thành:
 const repairDone = async (deviceId) => {
   try {
-    // ĐỔI TỪ /devices/ THÀNH /esp32/
-    await axios.post(`${API}/esp32/web/action`, {
-      action: 'KTV_Hoan_Thanh',
-      device_id: deviceId
-    });
+    await axios.patch(`${API}/devices/${deviceId}/repair-done`);
     await fetchDevices();
   } catch { /* ignore */ }
 };
   // Thống kê số lượng hiển thị lên 4 ô đếm trên Dashboard sáng màu
   const stats = {
-    waiting: devices.filter(d => d.status === 'Sẵn sàng' || d.status === 'Available').length,
+    waiting: devices.filter(d => d.status === 'available').length,
     active:  sessions.filter(s => s.clientStatus === 'green').length,
     warning: sessions.filter(s => s.clientStatus === 'orange').length,
     error:   sessions.filter(s => s.clientStatus === 'red').length,

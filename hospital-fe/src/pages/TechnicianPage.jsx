@@ -169,7 +169,7 @@ export default function TechnicianPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                 <thead>
                   <tr style={{ background: '#f9fafb' }}>
-                    {['MAC Address', 'Nhãn', 'Phòng', 'Giường', 'Trạng thái', 'Ngày thêm', ''].map(h => (
+                    {['STT', 'MAC Address', 'Nhãn', 'Phòng', 'Giường', 'Trạng thái', 'Ngày thêm', ''].map(h => (
                       <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 12, color: '#6b7280', fontWeight: 500, borderBottom: '1px solid #e5e7eb' }}>{h}</th>
                     ))}
                   </tr>
@@ -177,6 +177,7 @@ export default function TechnicianPage() {
                 <tbody>
                   {devices.map(d => (
                     <tr key={d.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                      <td style={{ padding: '11px 14px', color: '#6b7280', fontWeight: 600 }}>{d.deviceNo}</td>
                       <td style={{ padding: '11px 14px', fontFamily: 'monospace', fontSize: 13 }}>{d.macAddress}</td>
                       <td style={{ padding: '11px 14px', color: '#374151' }}>{d.label || '—'}</td>
                       <td style={{ padding: '11px 14px', color: '#6b7280' }}>{d.locationRoom || '—'}</td>

@@ -2,7 +2,7 @@
 // esp32_simulator.js — Giả lập NHIỀU ESP32 cùng lúc (Bản chuẩn)
 // ============================================================
 
-const API_URL  = 'http://localhost:8000/api';
+const API_URL  = 'https://bmed1-1.onrender.com/api';
 const INTERVAL = 3000; // ms
 
 // ── Giả lập 1 thiết bị ──────────────────────────────────────
@@ -53,16 +53,49 @@ function simulateDevice(sessionId, targetRate = 40, initialWeight = 500) {
 // ── Tự động lấy các session đang chạy từ Database ────────────────────────
 async function fetchActiveSessions() {
   try {
-    const res  = await fetch(`${API_URL}/sessions`);
+    console.log('⏳ Đang tiến hành đăng nhập giả lập để lấy quyền...');
+    
+    // 1. Đăng nhập để lấy Token (Dùng tài khoản test của bạn)
+    const loginRes = await fetch(`${API_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'bacsi@hospital.com', password: '123456' })
+    });
+    
+    const loginData = await loginRes.json();
+    
+    if (!loginData.token) {
+      console.error('❌ Giả lập đăng nhập thất bại, không có token:', loginData);
+      return [];
+    }
+    
+    console.log('✅ Đăng nhập thành công! Đang tải danh sách phiên truyền...');
+
+    // 2. Dùng Token vừa lấy được để gọi API lấy danh sách
+    const res = await fetch(`${API_URL}/sessions`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${loginData.token}` // Gắn token vào thẻ chứng minh
+      }
+    });
+    
     const data = await res.json();
+    
+    // Kiểm tra nhỡ server vẫn trả lỗi
+    if (data.error) {
+       console.error('❌ Lỗi từ server khi lấy danh sách:', data.error);
+       return [];
+    }
+
     // Lọc các session đang chạy thực tế
     return data.filter(s => s.status !== 'completed' && s.status !== 'urgent');
-  } catch {
-    console.error('❌ Không lấy được danh sách phiên truyền từ server.');
+    
+  } catch (err) {
+    console.error('❌ Lỗi chi tiết:', err.message);
     return [];
   }
 }
-
 // ── Hàm chạy chính ─────────────────────────────────────────────────────
 async function main() {
   console.log('🚀 ESP32 Multi-Simulator khởi động...\n');

@@ -237,10 +237,11 @@ app.get('/api/auth/me', requireAuth, (req, res) => res.json({ user: req.user }))
 app.get('/api/devices', requireAuth, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      'SELECT id,mac_address,label,location_room,location_bed,status,created_at FROM infusion_devices ORDER BY created_at DESC'
+      'SELECT id,device_no,mac_address,label,location_room,location_bed,status,created_at FROM infusion_devices ORDER BY device_no ASC'
     );
     res.json(rows.map(d => ({
-      id: d.id, macAddress: d.mac_address, label: d.label || d.mac_address,
+      id: d.id, deviceNo: d.device_no, macAddress: d.mac_address,
+      label: d.label || ('Thiết bị ' + d.device_no),
       locationRoom: d.location_room, locationBed: d.location_bed,
       status: d.status, createdAt: d.created_at,
     })));
@@ -253,12 +254,23 @@ app.post('/api/devices', requireAuth, requireTechnician, async (req, res) => {
     if (!macAddress) return res.status(400).json({ error: 'Thieu macAddress.' });
     const [[ex]] = await pool.query('SELECT id FROM infusion_devices WHERE mac_address=? LIMIT 1', [macAddress]);
     if (ex) return res.status(409).json({ error: 'MAC address da ton tai.' });
-    await pool.query("INSERT INTO infusion_devices (mac_address,label,status,registered_by) VALUES (?,?,'available',?)",
-      [macAddress, label || null, req.user.userId]);
-    const [[d]] = await pool.query(
-      'SELECT id,mac_address,label,location_room,location_bed,status,created_at FROM infusion_devices WHERE mac_address=? LIMIT 1', [macAddress]
+
+    // Tạo thiết bị trước (device_no được DB tự cấp số tăng dần 1,2,3,...)
+    await pool.query("INSERT INTO infusion_devices (mac_address,label,status,registered_by) VALUES (?,NULL,'available',?)",
+      [macAddress, req.user.userId]);
+
+    const [[created]] = await pool.query(
+      'SELECT id,device_no FROM infusion_devices WHERE mac_address=? LIMIT 1', [macAddress]
     );
-    res.status(201).json({ id: d.id, macAddress: d.mac_address, label: d.label || d.mac_address, locationRoom: d.location_room, locationBed: d.location_bed, status: d.status, createdAt: d.created_at });
+
+    // Nếu kỹ thuật viên không nhập nhãn riêng → tự đặt tên "Thiết bị {device_no}"
+    const finalLabel = (label && label.trim()) ? label.trim() : ('Thiết bị ' + created.device_no);
+    await pool.query('UPDATE infusion_devices SET label=? WHERE id=?', [finalLabel, created.id]);
+
+    const [[d]] = await pool.query(
+      'SELECT id,device_no,mac_address,label,location_room,location_bed,status,created_at FROM infusion_devices WHERE id=? LIMIT 1', [created.id]
+    );
+    res.status(201).json({ id: d.id, deviceNo: d.device_no, macAddress: d.mac_address, label: d.label, locationRoom: d.location_room, locationBed: d.location_bed, status: d.status, createdAt: d.created_at });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
