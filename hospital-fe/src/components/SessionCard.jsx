@@ -18,6 +18,7 @@ export default function SessionCard({ session }) {
   const tenBenhNhan = session.patientName || "Chưa có tên";
   const phong = session.room || "---";
   const giuong = session.bed || "---";
+  const tenThietBi = session.deviceLabel || session.deviceId || "—";
   const tocDoHienTai = session.dropRate ?? 0;
   const tocDoYLenh = session.prescribedDropRate ?? 40;
   const theTichConLai = session.volumeRemaining ?? session.volumeInitial ?? 0;
@@ -77,8 +78,11 @@ export default function SessionCard({ session }) {
           {tenBenhNhan}
         </span>
       </div>
-      <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '12px' }}>
+      <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '4px' }}>
         Phòng {phong} - Giường {giuong}
+      </div>
+      <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+        🔌 Thiết bị: <strong style={{ color: '#475569' }}>{tenThietBi}</strong>
       </div>
 
       <div style={{ fontSize: '13px', fontWeight: '600', color: statusColor, marginBottom: '16px' }}>

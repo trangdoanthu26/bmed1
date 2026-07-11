@@ -49,6 +49,28 @@ pool.getConnection()
   .then(c => { console.log('[DB] Ket noi MySQL thanh cong!'); c.release(); })
   .catch(e => { console.error('[DB] Loi ket noi MySQL:', e.message); process.exit(1); });
 
+// ── Tự động dọn bớt log cũ (infusion_metrics_logs) ──────────────
+// Chỉ xóa log của các PHIÊN ĐÃ KẾT THÚC và cũ hơn LOG_RETENTION_DAYS ngày,
+// không bao giờ đụng tới log của phiên đang hoạt động.
+const LOG_RETENTION_DAYS = Number(process.env.LOG_RETENTION_DAYS) || 30;
+async function cleanupOldLogs() {
+  try {
+    const [result] = await pool.query(
+      `DELETE m FROM infusion_metrics_logs m
+       JOIN infusion_sessions s ON m.session_id = s.id
+       WHERE s.status = 'completed'
+         AND m.recorded_at < DATE_SUB(NOW(), INTERVAL ? DAY)`,
+      [LOG_RETENTION_DAYS]
+    );
+    if (result.affectedRows > 0) {
+      console.log(`[Cleanup] Da xoa ${result.affectedRows} dong log cu hon ${LOG_RETENTION_DAYS} ngay.`);
+    }
+  } catch (err) { console.error('[Cleanup] Loi don log:', err.message); }
+}
+// Chạy 1 lần lúc khởi động (sau 30s) rồi lặp lại mỗi 24 giờ
+setTimeout(cleanupOldLogs, 30 * 1000);
+setInterval(cleanupOldLogs, 24 * 60 * 60 * 1000);
+
 // ── Token store ──────────────────────────────────────────────
 const tokenStore = new Map();
 function generateToken() { return crypto.randomBytes(32).toString('hex'); }
@@ -330,12 +352,51 @@ app.get('/api/sessions', requireAuth, async (req, res) => {
 
 app.get('/api/sessions/:id/metrics', requireAuth, async (req, res) => {
   try {
+    // Xem real-time: mặc định lấy 60 điểm gần nhất (5 phút, đủ cho biểu đồ trực tiếp)
+    // Xem lịch sử phiên đã kết thúc: truyền ?full=1 để lấy toàn bộ dữ liệu của phiên
+    const full  = req.query.full === '1';
+    const limit = Math.min(Number(req.query.limit) || (full ? 5000 : 60), 5000);
     const [rows] = await pool.query(
-      'SELECT current_drop_rate,current_weight,remaining_time,recorded_at FROM infusion_metrics_logs WHERE session_id=? ORDER BY recorded_at DESC LIMIT 60',
-      [req.params.id]
+      `SELECT current_drop_rate,current_weight,remaining_time,recorded_at
+       FROM infusion_metrics_logs WHERE session_id=? ORDER BY recorded_at DESC LIMIT ?`,
+      [req.params.id, limit]
     );
     res.json(rows.reverse());
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Lịch sử các phiên truyền ĐÃ KẾT THÚC (để bác sĩ xem lại sau khi phiên hoàn thành)
+app.get('/api/sessions/history', requireAuth, async (req, res) => {
+  try {
+    const { patientName } = req.query;
+    const params = [];
+    let where = "WHERE s.status = 'completed'";
+    if (patientName) { where += ' AND p.full_name = ?'; params.push(patientName); }
+
+    const [rows] = await pool.query(`
+      SELECT s.id,
+        p.full_name AS patientName, p.room_number AS room, p.bed_number AS bed,
+        d.mac_address AS deviceId, d.label AS deviceLabel,
+        ft.name AS fluidType,
+        s.initial_weight AS volumeInitial,
+        s.prescribed_drop_rate AS prescribedDropRate,
+        s.status, s.start_at AS createdAt, s.end_at AS endAt,
+        (SELECT (m.current_weight - 30) FROM infusion_metrics_logs m WHERE m.session_id=s.id ORDER BY m.recorded_at DESC LIMIT 1) AS volumeRemaining,
+        EXISTS(SELECT 1 FROM infusion_issues i WHERE i.session_id=s.id AND i.status!='resolved') AS manualError
+      FROM infusion_sessions s
+      JOIN patient_profiles p  ON s.patient_id=p.id
+      JOIN infusion_devices d  ON s.device_id=d.id
+      LEFT JOIN fluid_types ft ON s.fluid_type_id=ft.id
+      ${where}
+      ORDER BY s.end_at DESC
+      LIMIT 500`, params
+    );
+    res.json(rows.map(r => ({
+      ...r,
+      volumeRemaining: r.volumeRemaining != null ? +parseFloat(r.volumeRemaining).toFixed(1) : null,
+      manualError: Boolean(r.manualError),
+    })));
+  } catch (err) { console.error('[GET /api/sessions/history]', err.message); res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/sessions', requireAuth, async (req, res) => {
@@ -380,7 +441,7 @@ app.post('/api/sessions', requireAuth, async (req, res) => {
     );
     const [[ns]] = await conn.query(
       `SELECT s.id, p.full_name AS patientName, p.room_number AS room, p.bed_number AS bed,
-              d.mac_address AS deviceId, ft.name AS fluidType,
+              d.mac_address AS deviceId, d.label AS deviceLabel, ft.name AS fluidType,
               s.initial_weight AS volumeInitial, s.prescribed_drop_rate AS prescribedDropRate,
               s.status, s.start_at AS createdAt
        FROM infusion_sessions s
@@ -479,6 +540,21 @@ app.patch('/api/alerts/:id/read', requireAuth, async (req, res) => {
   try {
     await pool.query('UPDATE infusion_alerts SET is_read=1 WHERE id=?', [req.params.id]);
     res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Dọn log thủ công (bấm khi cần, hoặc phòng khi server Render bị sleep nên timer không kịp chạy)
+app.post('/api/admin/cleanup-logs', requireAuth, requireTechnician, async (req, res) => {
+  try {
+    const days = Number(req.body?.days) || LOG_RETENTION_DAYS;
+    const [result] = await pool.query(
+      `DELETE m FROM infusion_metrics_logs m
+       JOIN infusion_sessions s ON m.session_id = s.id
+       WHERE s.status = 'completed'
+         AND m.recorded_at < DATE_SUB(NOW(), INTERVAL ? DAY)`,
+      [days]
+    );
+    res.json({ success: true, deleted: result.affectedRows });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

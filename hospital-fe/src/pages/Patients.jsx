@@ -43,11 +43,7 @@ function groupByPatient(sessions) {
 }
 
 // ── Chi tiết bệnh nhân ─────────────────────────────────────────────────────
-function PatientDetail({ session, onBack }) {
-  console.log("=== KIỂM TRA SESSION ID ===");
-  console.log("Session ID đang mở trên Web:", session.id);
-  console.log("===========================");
-  
+function PatientDetail({ session, onBack, readOnly }) {
   const [chart, setChart]   = useState([])
   const [live, setLive]     = useState({
     dropRate:        session.dropRate        ?? 0,
@@ -64,39 +60,37 @@ function PatientDetail({ session, onBack }) {
   const isLechTocDo = live.dropRate > 0 && prescribed > 0 &&
     Math.abs(live.dropRate - prescribed) / prescribed >= 0.15
 
-const fetchMetrics = async () => {
+  const fetchMetrics = async () => {
     try {
-      const resData = await apiFetch(`/api/sessions/${session.id}/metrics`)
-      
-      // Xử lý "lưới an toàn": Nếu Backend trả về Object { data: [...] } thì lấy mảng bên trong
+      // Phiên đã kết thúc (xem lịch sử) → lấy toàn bộ dữ liệu (?full=1) vì sẽ không có thêm điểm mới nữa
+      const qs = readOnly ? '?full=1' : ''
+      const resData = await apiFetch(`/api/sessions/${session.id}/metrics${qs}`)
       const data = Array.isArray(resData) ? resData : (resData.data || []);
-      
-      // Bật F12 lên để xem mảng dữ liệu đã chui vào được đây chưa nhé
-      console.log("Dữ liệu Chart nhận được:", data); 
 
       if (data.length > 0) {
         const pts = data.map(p => ({
           time:   new Date(p.recorded_at || p.recordedAt).getTime(),
-          // Bắt buộc ép kiểu Number vì biểu đồ không vẽ được String
           tocDo:  Number(p.current_drop_rate || p.currentDropRate) || 0,
-          theeTich: parseFloat(((Number(p.current_weight || p.currentWeight) || 0) - 30).toFixed(1)), 
+          theeTich: parseFloat(((Number(p.current_weight || p.currentWeight) || 0) - 30).toFixed(1)),
           conLai: p.remaining_time || p.remainingTime,
         }))
-        
         setChart(pts)
-        const last = pts[pts.length - 1]
-        // Cập nhật lại số liệu to đùng trên màn hình
-        setLive({ dropRate: last.tocDo, volumeRemaining: last.theeTich, remainingTime: last.conLai })
+        if (!readOnly) {
+          const last = pts[pts.length - 1]
+          setLive({ dropRate: last.tocDo, volumeRemaining: last.theeTich, remainingTime: last.conLai })
+        }
       }
-    } catch (e) { 
-        console.error("Lỗi khi kéo dữ liệu biểu đồ:", e) 
+    } catch (e) {
+        console.error("Lỗi khi kéo dữ liệu biểu đồ:", e)
     }
     finally { setLoading(false) }
   }
   useEffect(() => {
     fetchMetrics()
-    timerRef.current = setInterval(fetchMetrics, 5000)
-    return () => clearInterval(timerRef.current)
+    if (!readOnly) {
+      timerRef.current = setInterval(fetchMetrics, 5000)
+      return () => clearInterval(timerRef.current)
+    }
   }, [session.id])
 
   const handleEnd = async () => {
@@ -119,22 +113,29 @@ const fetchMetrics = async () => {
     const d = new Date(ts)
     return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`
   }
+  const fmtDateTime = ts => ts ? new Date(ts).toLocaleString('vi-VN') : '—'
 
   return (
     <div>
       {/* Toolbar */}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
         <button className="back-btn" onClick={onBack}>← Quay lại</button>
-        <div style={{ display:'flex', gap:8 }}>
-          <button onClick={handleError} disabled={actionLoading}
-            style={{ background:'#DC2626', color:'#fff', border:'none', padding:'7px 14px', borderRadius:8, cursor:'pointer', fontWeight:600 }}>
-            ⚠ Báo lỗi thiết bị
-          </button>
-          <button onClick={handleEnd} disabled={actionLoading}
-            style={{ background:'#374151', color:'#fff', border:'none', padding:'7px 14px', borderRadius:8, cursor:'pointer', fontWeight:600 }}>
-            ✓ Kết thúc truyền
-          </button>
-        </div>
+        {readOnly ? (
+          <span style={{ padding: '5px 12px', borderRadius: 999, background: '#f3f4f6', color: '#6b7280', fontSize: 13, fontWeight: 600 }}>
+            📁 Phiên đã kết thúc — chỉ xem lại
+          </span>
+        ) : (
+          <div style={{ display:'flex', gap:8 }}>
+            <button onClick={handleError} disabled={actionLoading}
+              style={{ background:'#DC2626', color:'#fff', border:'none', padding:'7px 14px', borderRadius:8, cursor:'pointer', fontWeight:600 }}>
+              ⚠ Báo lỗi thiết bị
+            </button>
+            <button onClick={handleEnd} disabled={actionLoading}
+              style={{ background:'#374151', color:'#fff', border:'none', padding:'7px 14px', borderRadius:8, cursor:'pointer', fontWeight:600 }}>
+              ✓ Kết thúc truyền
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Thông tin 2 cột */}
@@ -160,11 +161,13 @@ const fetchMetrics = async () => {
           <h3>Thông tin truyền dịch</h3>
           {[
             ['Loại dịch:',        session.fluidType  ?? '—',                          ''],
-            ['Thiết bị:',         session.deviceId   ?? '—',                          ''],
+            ['Thiết bị:',         session.deviceLabel || session.deviceId || '—',    ''],
+            ['Bắt đầu lúc:',      fmtDateTime(session.createdAt),                     ''],
+            ...(readOnly ? [['Kết thúc lúc:', fmtDateTime(session.endAt), '']] : []),
             ['Tốc độ mục tiêu:',  `${prescribed} giọt/phút`,                          'blue'],
-            ['Tốc độ hiện tại:',  `${live.dropRate} giọt/phút`,  isLechTocDo ? 'red' : 'green'],
+            [readOnly ? 'Tốc độ cuối cùng:' : 'Tốc độ hiện tại:',  `${live.dropRate} giọt/phút`,  isLechTocDo ? 'red' : 'green'],
             ['Thể tích còn lại:', `${live.volumeRemaining} ml`,                       ''],
-            ['Thời gian còn lại:', live.remainingTime ? `~${live.remainingTime} phút` : '—', ''],
+            ...(!readOnly ? [['Thời gian còn lại:', live.remainingTime ? `~${live.remainingTime} phút` : '—', '']] : []),
           ].map(([k, v, c]) => (
             <div key={k} className="detail-row">
               <span className="k">{k}</span>
@@ -186,6 +189,8 @@ const fetchMetrics = async () => {
         <div style={{ width:'100%', height:260 }}>
           {loading && chart.length === 0
             ? <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100%', color:'#9CA3AF' }}>Đang tải dữ liệu...</div>
+            : chart.length === 0
+            ? <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100%', color:'#9CA3AF' }}>Không có dữ liệu đo cho phiên này.</div>
             : (
               <ResponsiveContainer>
                 <ComposedChart data={chart} margin={{ top:10, right:20, left:0, bottom:0 }}>
@@ -211,6 +216,8 @@ const fetchMetrics = async () => {
         <div style={{ width:'100%', height:240 }}>
           {loading && chart.length === 0
             ? <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100%', color:'#9CA3AF' }}>Đang tải dữ liệu...</div>
+            : chart.length === 0
+            ? <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100%', color:'#9CA3AF' }}>Không có dữ liệu đo cho phiên này.</div>
             : (
               <ResponsiveContainer>
                 <ComposedChart data={chart} margin={{ top:10, right:20, left:0, bottom:0 }}>
@@ -230,18 +237,137 @@ const fetchMetrics = async () => {
   )
 }
 
+// ── Danh sách các phiên (đang chạy + lịch sử) của 1 bệnh nhân ──────────────
+function PatientSessionsList({ patientName, sessions, onBack, onOpenSession }) {
+  const STATUS_LABEL = {
+    normal:    { text: 'Đang truyền bình thường', color: '#16a34a', bg: '#dcfce7' },
+    warning:   { text: 'Sắp hết dịch',            color: '#d97706', bg: '#fef3c7' },
+    urgent:    { text: 'Tốc độ bất thường',       color: '#dc2626', bg: '#fee2e2' },
+    completed: { text: 'Đã kết thúc',             color: '#6b7280', bg: '#f3f4f6' },
+  }
+  return (
+    <div>
+      <button className="back-btn" onClick={onBack} style={{ marginBottom: 16 }}>← Quay lại danh sách bệnh nhân</button>
+      <div className="page-title" style={{ marginBottom: 12 }}>Lịch sử truyền dịch — {patientName}</div>
+      <div className="table-card">
+        <table>
+          <thead>
+            <tr>
+              <th>Bắt đầu</th>
+              <th>Kết thúc</th>
+              <th>Thiết bị</th>
+              <th>Loại dịch</th>
+              <th>Trạng thái</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {sessions.length === 0 ? (
+              <tr><td colSpan={6} style={{ textAlign:'center', color:'var(--text-secondary)', padding:32 }}>Chưa có phiên truyền nào.</td></tr>
+            ) : sessions.map(s => {
+              const st = STATUS_LABEL[s.status] || { text: s.status, color:'#6b7280', bg:'#f3f4f6' }
+              return (
+                <tr key={s.id}>
+                  <td>{s.createdAt ? new Date(s.createdAt).toLocaleString('vi-VN') : '—'}</td>
+                  <td>{s.endAt ? new Date(s.endAt).toLocaleString('vi-VN') : '—'}</td>
+                  <td>{s.deviceLabel || s.deviceId || '—'}</td>
+                  <td>{s.fluidType || '—'}</td>
+                  <td>
+                    <span style={{ padding: '3px 10px', borderRadius: 99, fontSize: 12, fontWeight: 500, color: st.color, background: st.bg }}>
+                      {st.text}
+                    </span>
+                  </td>
+                  <td>
+                    <button className="btn-blue-sm" onClick={() => onOpenSession(s)}>Xem chi tiết</button>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 // ── Danh sách bệnh nhân ────────────────────────────────────────────────────
 export default function Patients() {
-  const { sessions } = useApp()
-  const [selected, setSelected] = useState(null)
+  const { sessions } = useApp() // các phiên đang hoạt động (real-time)
+  const [history, setHistory] = useState([])       // các phiên đã kết thúc
+  const [historyLoading, setHistoryLoading] = useState(true)
+  const [view, setView] = useState('list')          // 'list' | 'sessions' | 'detail'
+  const [selectedPatient, setSelectedPatient] = useState(null)
+  const [selectedSession, setSelectedSession] = useState(null)
 
-  const patients     = groupByPatient(sessions)
-  const activeSession = selected ? sessions.find(s => s.patientName === selected) : null
+  const fetchHistory = async () => {
+    try {
+      const data = await apiFetch('/api/sessions/history')
+      setHistory(Array.isArray(data) ? data : [])
+    } catch (e) {
+      console.error('Lỗi tải lịch sử:', e)
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
 
-  if (selected && activeSession) {
+  useEffect(() => { fetchHistory() }, [])
+
+  // Gộp cả phiên đang chạy + phiên đã kết thúc để tính danh sách bệnh nhân đầy đủ
+  const allSessions = [...sessions, ...history]
+  const patients = groupByPatient(allSessions)
+
+  const openPatient = (patientName) => {
+    setSelectedPatient(patientName)
+    const patientSessions = allSessions
+      .filter(s => s.patientName === patientName)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    // Nếu bệnh nhân chỉ có đúng 1 phiên (đang chạy) → mở thẳng chi tiết cho nhanh
+    if (patientSessions.length === 1) {
+      setSelectedSession(patientSessions[0])
+      setView('detail')
+    } else {
+      setView('sessions')
+    }
+  }
+
+  const openSession = (session) => {
+    setSelectedSession(session)
+    setView('detail')
+  }
+
+  const backToList = () => { setView('list'); setSelectedPatient(null); setSelectedSession(null) }
+  const backToSessions = () => { setView('sessions'); setSelectedSession(null) }
+
+  if (view === 'detail' && selectedSession) {
     return (
       <div className="main-content">
-        <PatientDetail session={activeSession} onBack={() => setSelected(null)} />
+        <PatientDetail
+          session={selectedSession}
+          readOnly={selectedSession.status === 'completed'}
+          onBack={() => {
+            fetchHistory()
+            // Nếu vào thẳng từ danh sách (bệnh nhân chỉ có 1 phiên) thì quay lại list, ngược lại quay lại danh sách phiên
+            selectedPatient && allSessions.filter(s => s.patientName === selectedPatient).length > 1
+              ? backToSessions()
+              : backToList()
+          }}
+        />
+      </div>
+    )
+  }
+
+  if (view === 'sessions' && selectedPatient) {
+    const patientSessions = allSessions
+      .filter(s => s.patientName === selectedPatient)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    return (
+      <div className="main-content">
+        <PatientSessionsList
+          patientName={selectedPatient}
+          sessions={patientSessions}
+          onBack={backToList}
+          onOpenSession={openSession}
+        />
       </div>
     )
   }
@@ -263,7 +389,7 @@ export default function Patients() {
             {patients.length === 0 ? (
               <tr>
                 <td colSpan={4} style={{ textAlign:'center', color:'var(--text-secondary)', padding:32 }}>
-                  Chưa có bệnh nhân nào đang truyền dịch
+                  {historyLoading ? 'Đang tải...' : 'Chưa có bệnh nhân nào đang truyền dịch'}
                 </td>
               </tr>
             ) : patients.map(p => (
@@ -272,7 +398,7 @@ export default function Patients() {
                 <td>{[...p.fluidTypes].join(', ') || '—'}</td>
                 <td>{p.sessions.length}</td>
                 <td>
-                  <button className="btn-blue-sm" onClick={() => setSelected(p.patientName)}>
+                  <button className="btn-blue-sm" onClick={() => openPatient(p.patientName)}>
                     Xem chi tiết
                   </button>
                 </td>
