@@ -2,13 +2,14 @@ import { useState } from 'react'
 import { useApp } from '../context/AppContext'
 
 export default function Notifications() {
-  const { sessions, alerts, handleAlertAction, loading } = useApp()
+  const { sessions, alerts, devices, handleAlertAction, loading } = useApp()
   const [activeTab, setActiveTab] = useState('toc-do') // Tab mặc định
 
-  // Phân loại dữ liệu cảnh báo
-  const sapHetAlerts = alerts?.filter(a => a.alert_type === 'Sắp hết' || a.type === 'Sap_Het') || []
-  const tocDoAlerts = alerts?.filter(a => a.alert_type === 'Tốc độ bất thường' || a.type === 'Toc_Do_Bat_Thuong') || []
-  const baoTriDevices = sessions?.filter(s => s.device_status === 'Cần bảo trì' || s.status === 'Cần bảo trì') || []
+  // Phân loại dữ liệu cảnh báo — PHẢI khớp đúng alert_type lưu trong DB (sap_het / loi_toc_do)
+  const sapHetAlerts = alerts?.filter(a => a.alert_type === 'sap_het') || []
+  const tocDoAlerts = alerts?.filter(a => a.alert_type === 'loi_toc_do') || []
+  // Thiết bị lỗi phải lấy từ danh sách THIẾT BỊ (status='error'), không phải từ sessions
+  const baoTriDevices = devices?.filter(d => d.status === 'error') || []
 
   const triggerAction = async (sessionId, action, alertId, deviceId) => {
     if (window.confirm('Bạn có chắc chắn muốn thực hiện thao tác này?')) {
@@ -108,9 +109,9 @@ export default function Notifications() {
             <tbody>
               {baoTriDevices.map(dev => (
                 <tr key={dev.id} style={{ borderBottom: '1px solid #f1f5f9', fontSize: '14px' }}>
-                  <td style={{ padding: '12px 10px', fontWeight: '500' }}>{dev.name || 'ESP32_Sensor'}</td>
-                  <td style={{ padding: '12px 10px', color: '#64748b' }}>{dev.mac_address || 'Chưa rõ'}</td>
-                  <td style={{ padding: '12px 10px' }}><span style={{ padding: '4px 8px', backgroundColor: '#fef2f2', color: '#ef4444', borderRadius: '6px', fontSize: '12px', fontWeight: '600' }}>Đang bảo trì</span></td>
+                  <td style={{ padding: '12px 10px', fontWeight: '500' }}>{dev.label || 'ESP32_Sensor'}</td>
+                  <td style={{ padding: '12px 10px', color: '#64748b' }}>{dev.macAddress || 'Chưa rõ'}</td>
+                  <td style={{ padding: '12px 10px' }}><span style={{ padding: '4px 8px', backgroundColor: '#fef2f2', color: '#ef4444', borderRadius: '6px', fontSize: '12px', fontWeight: '600' }}>Cần kỹ thuật viên xử lý</span></td>
                 </tr>
               ))}
             </tbody>

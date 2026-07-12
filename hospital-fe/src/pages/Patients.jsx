@@ -35,9 +35,14 @@ async function apiFetch(url, opts = {}) {
 function groupByPatient(sessions) {
   const map = {}
   sessions.forEach(s => {
-    if (!map[s.patientName]) map[s.patientName] = { patientName: s.patientName, sessions: [], fluidTypes: new Set() }
-    map[s.patientName].sessions.push(s)
-    if (s.fluidType) map[s.patientName].fluidTypes.add(s.fluidType)
+    const key = s.phone ? `phone:${s.phone}` : `name:${s.patientName}`
+    if (!map[key]) map[key] = { key, patientName: s.patientName, phone: s.phone || null, sessions: [], fluidTypes: new Set() }
+    map[key].sessions.push(s)
+    if (!map[key]._latest || new Date(s.createdAt) > new Date(map[key]._latest)) {
+      map[key]._latest = s.createdAt
+      map[key].patientName = s.patientName
+    }
+    if (s.fluidType) map[key].fluidTypes.add(s.fluidType)
   })
   return Object.values(map)
 }
@@ -144,6 +149,7 @@ function PatientDetail({ session, onBack, readOnly }) {
           <h3>Thông tin bệnh nhân</h3>
           {[
             ['Họ và tên:',  session.patientName],
+            ['Số điện thoại:', session.phone ?? '—'],
             ['Tuổi:',       session.age       ?? '—'],
             ['Phòng:',      session.room      ?? '—'],
             ['Giường:',     session.bed       ?? '—'],
@@ -296,8 +302,10 @@ export default function Patients() {
   const [history, setHistory] = useState([])       // các phiên đã kết thúc
   const [historyLoading, setHistoryLoading] = useState(true)
   const [view, setView] = useState('list')          // 'list' | 'sessions' | 'detail'
-  const [selectedPatient, setSelectedPatient] = useState(null)
+  const [selectedPatientKey, setSelectedPatientKey] = useState(null)
+  const [selectedPatientName, setSelectedPatientName] = useState(null)
   const [selectedSession, setSelectedSession] = useState(null)
+  const [search, setSearch] = useState('')
 
   const fetchHistory = async () => {
     try {
@@ -315,11 +323,22 @@ export default function Patients() {
   // Gộp cả phiên đang chạy + phiên đã kết thúc để tính danh sách bệnh nhân đầy đủ
   const allSessions = [...sessions, ...history]
   const patients = groupByPatient(allSessions)
+  const keyOf = (s) => s.phone ? `phone:${s.phone}` : `name:${s.patientName}`
 
-  const openPatient = (patientName) => {
-    setSelectedPatient(patientName)
+  // Tìm kiếm theo tên hoặc số điện thoại (không phân biệt hoa/thường, bỏ khoảng trắng khi so SĐT)
+  const searchNorm = search.trim().toLowerCase()
+  const filteredPatients = searchNorm
+    ? patients.filter(p =>
+        (p.patientName || '').toLowerCase().includes(searchNorm) ||
+        (p.phone || '').replace(/\s+/g, '').includes(searchNorm.replace(/\s+/g, ''))
+      )
+    : patients
+
+  const openPatient = (patient) => {
+    setSelectedPatientKey(patient.key)
+    setSelectedPatientName(patient.patientName)
     const patientSessions = allSessions
-      .filter(s => s.patientName === patientName)
+      .filter(s => keyOf(s) === patient.key)
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
     // Nếu bệnh nhân chỉ có đúng 1 phiên (đang chạy) → mở thẳng chi tiết cho nhanh
     if (patientSessions.length === 1) {
@@ -335,7 +354,7 @@ export default function Patients() {
     setView('detail')
   }
 
-  const backToList = () => { setView('list'); setSelectedPatient(null); setSelectedSession(null) }
+  const backToList = () => { setView('list'); setSelectedPatientKey(null); setSelectedPatientName(null); setSelectedSession(null) }
   const backToSessions = () => { setView('sessions'); setSelectedSession(null) }
 
   if (view === 'detail' && selectedSession) {
@@ -347,7 +366,7 @@ export default function Patients() {
           onBack={() => {
             fetchHistory()
             // Nếu vào thẳng từ danh sách (bệnh nhân chỉ có 1 phiên) thì quay lại list, ngược lại quay lại danh sách phiên
-            selectedPatient && allSessions.filter(s => s.patientName === selectedPatient).length > 1
+            selectedPatientKey && allSessions.filter(s => keyOf(s) === selectedPatientKey).length > 1
               ? backToSessions()
               : backToList()
           }}
@@ -356,14 +375,14 @@ export default function Patients() {
     )
   }
 
-  if (view === 'sessions' && selectedPatient) {
+  if (view === 'sessions' && selectedPatientKey) {
     const patientSessions = allSessions
-      .filter(s => s.patientName === selectedPatient)
+      .filter(s => keyOf(s) === selectedPatientKey)
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
     return (
       <div className="main-content">
         <PatientSessionsList
-          patientName={selectedPatient}
+          patientName={selectedPatientName}
           sessions={patientSessions}
           onBack={backToList}
           onOpenSession={openSession}
@@ -374,31 +393,42 @@ export default function Patients() {
 
   return (
     <div className="main-content">
-      <div className="page-title">Danh sách bệnh nhân</div>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: 16, flexWrap:'wrap', gap: 12 }}>
+        <div className="page-title" style={{ margin: 0 }}>Danh sách bệnh nhân</div>
+        <input
+          type="text"
+          placeholder="🔍 Tìm theo tên hoặc số điện thoại..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #e2e8f0', minWidth: 280, fontSize: 14 }}
+        />
+      </div>
       <div className="table-card">
         <table>
           <thead>
             <tr>
               <th>Tên bệnh nhân</th>
+              <th>Số điện thoại</th>
               <th>Loại dịch truyền</th>
               <th>Số bình truyền</th>
               <th>Lịch sử truyền</th>
             </tr>
           </thead>
           <tbody>
-            {patients.length === 0 ? (
+            {filteredPatients.length === 0 ? (
               <tr>
-                <td colSpan={4} style={{ textAlign:'center', color:'var(--text-secondary)', padding:32 }}>
-                  {historyLoading ? 'Đang tải...' : 'Chưa có bệnh nhân nào đang truyền dịch'}
+                <td colSpan={5} style={{ textAlign:'center', color:'var(--text-secondary)', padding:32 }}>
+                  {historyLoading ? 'Đang tải...' : searchNorm ? 'Không tìm thấy bệnh nhân phù hợp.' : 'Chưa có bệnh nhân nào đang truyền dịch'}
                 </td>
               </tr>
-            ) : patients.map(p => (
-              <tr key={p.patientName}>
+            ) : filteredPatients.map(p => (
+              <tr key={p.key}>
                 <td style={{ fontWeight:500 }}>{p.patientName}</td>
+                <td>{p.phone || '—'}</td>
                 <td>{[...p.fluidTypes].join(', ') || '—'}</td>
                 <td>{p.sessions.length}</td>
                 <td>
-                  <button className="btn-blue-sm" onClick={() => openPatient(p.patientName)}>
+                  <button className="btn-blue-sm" onClick={() => openPatient(p)}>
                     Xem chi tiết
                   </button>
                 </td>

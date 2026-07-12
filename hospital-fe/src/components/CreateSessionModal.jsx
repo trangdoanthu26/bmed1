@@ -4,7 +4,7 @@ import { useApp } from '../context/AppContext'
 export default function CreateSessionModal({ onClose }) {
   const { createSession, devices } = useApp()
   const [form, setForm] = useState({
-    patientName: '', age: '', room: '', bed: '',
+    patientName: '', age: '', phone: '', room: '', bed: '',
     condition: '', deviceId: '', fluidType: '',
     volumeInitial: '', dropRate: '', doctor: '',
   })
@@ -14,8 +14,12 @@ export default function CreateSessionModal({ onClose }) {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const handleSubmit = async () => {
-    if (!form.patientName || !form.room || !form.volumeInitial || !form.dropRate) {
+    if (!form.patientName || !form.phone || !form.room || !form.volumeInitial || !form.dropRate) {
       setErr('Vui lòng điền đầy đủ các trường bắt buộc.')
+      return
+    }
+    if (!/^[0-9+][0-9 .-]{6,19}$/.test(form.phone.trim())) {
+      setErr('Số điện thoại không hợp lệ.')
       return
     }
     setSaving(true)
@@ -54,6 +58,10 @@ export default function CreateSessionModal({ onClose }) {
           <div className="form-group">
             <label>Tuổi</label>
             <input type="number" placeholder="" value={form.age} onChange={e => set('age', e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label>Số điện thoại <span style={{color:'red'}}>*</span></label>
+            <input placeholder="VD: 0912345678" value={form.phone} onChange={e => set('phone', e.target.value)} />
           </div>
           <div className="form-group">
             <label>Phòng <span style={{color:'red'}}>*</span></label>

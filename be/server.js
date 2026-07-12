@@ -322,7 +322,7 @@ app.get('/api/sessions', requireAuth, async (req, res) => {
   try {
     const [rows] = await pool.query(`
       SELECT s.id,
-        p.full_name AS patientName, p.room_number AS room, p.bed_number AS bed,
+        p.full_name AS patientName, p.phone AS phone, p.room_number AS room, p.bed_number AS bed,
         d.mac_address AS deviceId, d.label AS deviceLabel,
         ft.name AS fluidType,
         s.initial_weight AS volumeInitial,
@@ -375,7 +375,7 @@ app.get('/api/sessions/history', requireAuth, async (req, res) => {
 
     const [rows] = await pool.query(`
       SELECT s.id,
-        p.full_name AS patientName, p.room_number AS room, p.bed_number AS bed,
+        p.full_name AS patientName, p.phone AS phone, p.room_number AS room, p.bed_number AS bed,
         d.mac_address AS deviceId, d.label AS deviceLabel,
         ft.name AS fluidType,
         s.initial_weight AS volumeInitial,
@@ -403,22 +403,36 @@ app.post('/api/sessions', requireAuth, async (req, res) => {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
-    const { patientName, room, bed, deviceId, fluidType, volumeInitial, dropRate } = req.body;
-    if (!patientName || !deviceId || !volumeInitial) {
+    const { patientName, phone, room, bed, deviceId, fluidType, volumeInitial, dropRate } = req.body;
+    if (!patientName || !phone || !deviceId || !volumeInitial) {
       await conn.rollback(); conn.release();
-      return res.status(400).json({ error: 'Thieu: patientName, deviceId, volumeInitial' });
+      return res.status(400).json({ error: 'Thieu: patientName, phone, deviceId, volumeInitial' });
+    }
+    const phoneClean = String(phone).trim();
+    if (!/^[0-9+][0-9 .-]{6,19}$/.test(phoneClean)) {
+      await conn.rollback(); conn.release();
+      return res.status(400).json({ error: 'So dien thoai khong hop le.' });
     }
 
+    // Số điện thoại là ĐỊNH DANH DUY NHẤT của bệnh nhân: cùng số điện thoại
+    // = cùng 1 bệnh nhân, dù tạo phiên truyền nhiều lần (nhiều "bình truyền").
     let patientId;
     const [existing] = await conn.query(
-      'SELECT id FROM patient_profiles WHERE full_name=? AND room_number=? AND bed_number=? LIMIT 1',
-      [patientName, room??null, bed??null]
+      'SELECT id FROM patient_profiles WHERE phone=? LIMIT 1',
+      [phoneClean]
     );
     if (existing.length > 0) {
       patientId = existing[0].id;
+      await conn.query(
+        'UPDATE patient_profiles SET full_name=?, room_number=?, bed_number=? WHERE id=?',
+        [patientName, room ?? null, bed ?? null, patientId]
+      );
     } else {
-      await conn.query('INSERT INTO patient_profiles (full_name,room_number,bed_number) VALUES (?,?,?)', [patientName, room??null, bed??null]);
-      const [[np]] = await conn.query('SELECT id FROM patient_profiles WHERE full_name=? ORDER BY created_at DESC LIMIT 1', [patientName]);
+      await conn.query(
+        'INSERT INTO patient_profiles (full_name,phone,room_number,bed_number) VALUES (?,?,?,?)',
+        [patientName, phoneClean, room ?? null, bed ?? null]
+      );
+      const [[np]] = await conn.query('SELECT id FROM patient_profiles WHERE phone=? LIMIT 1', [phoneClean]);
       patientId = np.id;
     }
 
@@ -440,7 +454,7 @@ app.post('/api/sessions', requireAuth, async (req, res) => {
       [device.id, patientId, req.user.userId, fluidTypeId, volumeInitial, prescribedRate]
     );
     const [[ns]] = await conn.query(
-      `SELECT s.id, p.full_name AS patientName, p.room_number AS room, p.bed_number AS bed,
+      `SELECT s.id, p.full_name AS patientName, p.phone AS phone, p.room_number AS room, p.bed_number AS bed,
               d.mac_address AS deviceId, d.label AS deviceLabel, ft.name AS fluidType,
               s.initial_weight AS volumeInitial, s.prescribed_drop_rate AS prescribedDropRate,
               s.status, s.start_at AS createdAt
@@ -448,7 +462,7 @@ app.post('/api/sessions', requireAuth, async (req, res) => {
        JOIN patient_profiles p ON s.patient_id=p.id
        JOIN infusion_devices d ON s.device_id=d.id
        LEFT JOIN fluid_types ft ON s.fluid_type_id=ft.id
-       WHERE s.patient_id=? ORDER BY s.start_at DESC LIMIT 1`, [patientId]
+       WHERE s.patient_id=? AND s.device_id=? ORDER BY s.start_at DESC LIMIT 1`, [patientId, device.id]
     );
     await conn.query("UPDATE infusion_devices SET status='active' WHERE id=?", [device.id]);
     await conn.commit(); conn.release();
@@ -523,7 +537,7 @@ app.get('/api/alerts', requireAuth, async (req, res) => {
     const [rows] = await pool.query(
       `SELECT a.id, a.alert_type, a.message, a.is_read, a.triggered_at, a.handled_at,
               s.id AS session_id,
-              p.full_name AS patientName, p.room_number AS room, p.bed_number AS bed,
+              p.full_name AS patientName, p.phone AS phone, p.room_number AS room, p.bed_number AS bed,
               d.mac_address AS deviceId, d.label AS deviceLabel
        FROM infusion_alerts a
        JOIN infusion_sessions s ON a.session_id=s.id
