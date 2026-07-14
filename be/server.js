@@ -42,7 +42,12 @@ const pool = mysql.createPool({
   ssl:                { rejectUnauthorized: false },
   waitForConnections: true,
   connectionLimit:    10,
-  timezone:           '+07:00',
+  // QUAN TRỌNG: MySQL server (NOW()/CURRENT_TIMESTAMP) đang lưu giờ theo UTC,
+  // không phải giờ Việt Nam. Phải khai 'Z' (UTC) ở đây để driver hiểu đúng
+  // giá trị đọc lên là UTC rồi mới trả về đúng cho frontend quy đổi ra giờ VN.
+  // (Trước đây khai '+07:00' khiến driver hiểu nhầm giờ UTC lưu trong DB là
+  // giờ VN, làm mọi mốc thời gian trả về bị lệch chậm mất 7 tiếng.)
+  timezone:           'Z',
 });
 
 pool.getConnection()
