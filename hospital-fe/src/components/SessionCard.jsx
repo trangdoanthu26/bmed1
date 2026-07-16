@@ -58,7 +58,7 @@ export default function SessionCard({ session }) {
 
   return (
     <div 
-      onClick={() => navigate('/benh-nhan')} // CLICK VÀO THẺ: Nhảy sang trang chi tiết biểu đồ
+      onClick={() => navigate('/benh-nhan', { state: { session } })} // CLICK VÀO THẺ: Nhảy thẳng vào chi tiết phiên truyền này
       style={{
         border: '2px solid',
         borderRadius: '12px',

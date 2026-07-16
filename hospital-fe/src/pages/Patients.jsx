@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine, Legend,
@@ -299,13 +300,23 @@ function PatientSessionsList({ patientName, sessions, onBack, onOpenSession }) {
 // ── Danh sách bệnh nhân ────────────────────────────────────────────────────
 export default function Patients() {
   const { sessions } = useApp() // các phiên đang hoạt động (real-time)
+  const location = useLocation()
+  const navigate = useNavigate()
+  const navState = location.state
+
   const [history, setHistory] = useState([])       // các phiên đã kết thúc
   const [historyLoading, setHistoryLoading] = useState(true)
-  const [view, setView] = useState('list')          // 'list' | 'sessions' | 'detail'
+  // Nếu được điều hướng tới kèm 1 phiên cụ thể (từ thẻ ở Tổng quan hoặc từ Thông báo) → mở thẳng chi tiết
+  const [view, setView] = useState(navState?.session ? 'detail' : 'list')          // 'list' | 'sessions' | 'detail'
   const [selectedPatientKey, setSelectedPatientKey] = useState(null)
   const [selectedPatientName, setSelectedPatientName] = useState(null)
-  const [selectedSession, setSelectedSession] = useState(null)
-  const [search, setSearch] = useState('')
+  const [selectedSession, setSelectedSession] = useState(navState?.session ?? null)
+  const [search, setSearch] = useState(navState?.searchName ?? '')
+
+  // Xoá state điều hướng sau khi đã dùng, để lần sau bấm "Bệnh nhân" ở Sidebar vẫn về danh sách bình thường
+  useEffect(() => {
+    if (navState) navigate(location.pathname, { replace: true, state: null })
+  }, [])
 
   const fetchHistory = async () => {
     try {

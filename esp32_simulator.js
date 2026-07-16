@@ -16,8 +16,11 @@ function simulateDevice(sessionId, targetRate = 40, initialWeight = 500) {
     // Giả lập chạy bình thường, chỉ dao động nhẹ quanh y lệnh ± 2 giọt
     const dropRate = targetRate + Math.floor(Math.random() * 5) - 2; 
 
-    // Dịch vơi dần 1–2g mỗi 3 giây
-    weight -= (Math.random() * 2 + 1);
+    // Chuẩn y tế: 20 giọt = 1ml. Lượng dịch hao hụt phải tỉ lệ với tốc độ (giọt/phút)
+    // và khoảng thời gian thực giữa 2 lần gửi (INTERVAL), không phải một số cố định.
+    // ml hao hụt = (giọt/phút ÷ 20 giọt/ml) ÷ 60 giây × số giây trôi qua (INTERVAL/1000)
+    const mlPerTick = (dropRate / 20 / 60) * (INTERVAL / 1000);
+    weight -= mlPerTick; // giả định 1ml ≈ 1g (dịch truyền gốc nước)
     if (weight < 30) weight = 30; // đáy bình
 
     const payload = {

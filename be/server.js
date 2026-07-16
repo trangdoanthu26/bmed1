@@ -340,7 +340,7 @@ app.get('/api/sessions', requireAuth, async (req, res) => {
     const [rows] = await pool.query(`
       SELECT s.id,
         p.full_name AS patientName, p.phone AS phone, p.room_number AS room, p.bed_number AS bed,
-        d.mac_address AS deviceId, d.label AS deviceLabel,
+        d.mac_address AS deviceId, COALESCE(d.label, CONCAT('Thiết bị ', d.device_no)) AS deviceLabel,
         ft.name AS fluidType,
         s.initial_weight AS volumeInitial,
         s.prescribed_drop_rate AS prescribedDropRate,
@@ -393,7 +393,7 @@ app.get('/api/sessions/history', requireAuth, async (req, res) => {
     const [rows] = await pool.query(`
       SELECT s.id,
         p.full_name AS patientName, p.phone AS phone, p.room_number AS room, p.bed_number AS bed,
-        d.mac_address AS deviceId, d.label AS deviceLabel,
+        d.mac_address AS deviceId, COALESCE(d.label, CONCAT('Thiết bị ', d.device_no)) AS deviceLabel,
         ft.name AS fluidType,
         s.initial_weight AS volumeInitial,
         s.prescribed_drop_rate AS prescribedDropRate,
@@ -472,7 +472,7 @@ app.post('/api/sessions', requireAuth, async (req, res) => {
     );
     const [[ns]] = await conn.query(
       `SELECT s.id, p.full_name AS patientName, p.phone AS phone, p.room_number AS room, p.bed_number AS bed,
-              d.mac_address AS deviceId, d.label AS deviceLabel, ft.name AS fluidType,
+              d.mac_address AS deviceId, COALESCE(d.label, CONCAT('Thiết bị ', d.device_no)) AS deviceLabel, ft.name AS fluidType,
               s.initial_weight AS volumeInitial, s.prescribed_drop_rate AS prescribedDropRate,
               s.status, s.start_at AS createdAt
        FROM infusion_sessions s
@@ -567,7 +567,7 @@ app.get('/api/alerts', requireAuth, async (req, res) => {
       `SELECT a.id, a.alert_type, a.message, a.is_read, a.triggered_at, a.handled_at,
               s.id AS session_id,
               p.full_name AS patientName, p.phone AS phone, p.room_number AS room, p.bed_number AS bed,
-              d.mac_address AS deviceId, d.label AS deviceLabel
+              d.mac_address AS deviceId, COALESCE(d.label, CONCAT('Thiết bị ', d.device_no)) AS deviceLabel
        FROM infusion_alerts a
        JOIN infusion_sessions s ON a.session_id=s.id
        JOIN patient_profiles  p ON s.patient_id=p.id
@@ -586,7 +586,7 @@ app.get('/api/alerts/history', requireAuth, async (req, res) => {
       `SELECT a.id, a.alert_type, a.message, a.triggered_at, a.handled_at, a.resolved_by,
               s.id AS session_id,
               p.full_name AS patientName, p.room_number AS room, p.bed_number AS bed,
-              d.mac_address AS deviceId, d.label AS deviceLabel
+              d.mac_address AS deviceId, COALESCE(d.label, CONCAT('Thiết bị ', d.device_no)) AS deviceLabel
        FROM infusion_alerts a
        JOIN infusion_sessions s ON a.session_id=s.id
        JOIN patient_profiles  p ON s.patient_id=p.id
