@@ -246,7 +246,7 @@ function PatientDetail({ session, onBack, readOnly }) {
 // ── Danh sách các phiên (đang chạy + lịch sử) của 1 bệnh nhân ──────────────
 function PatientSessionsList({ patientName, sessions, onBack, onOpenSession }) {
   const STATUS_LABEL = {
-    normal:    { text: 'Đang truyền bình thường', color: '#16a34a', bg: '#dcfce7' },
+    normal:    { text: 'Đang truyền',             color: '#16a34a', bg: '#dcfce7' },
     warning:   { text: 'Sắp hết dịch',            color: '#d97706', bg: '#fef3c7' },
     urgent:    { text: 'Tốc độ bất thường',       color: '#dc2626', bg: '#fee2e2' },
     completed: { text: 'Đã kết thúc',             color: '#6b7280', bg: '#f3f4f6' },

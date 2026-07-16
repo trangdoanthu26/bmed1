@@ -1,5 +1,29 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import axios from 'axios'
+
+// Phát 1 tiếng "beep" ngắn báo có cảnh báo mới — dùng Web Audio API,
+// không cần file âm thanh (.mp3) nào cả.
+function playAlertBeep() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext
+    const ctx = new AudioCtx()
+    const now = ctx.currentTime
+    // 2 tiếng "bíp bíp" liên tiếp cho dễ nhận ra
+    ;[0, 0.18].forEach(delay => {
+      const osc  = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = 'sine'
+      osc.frequency.value = 880
+      gain.gain.setValueAtTime(0.0001, now + delay)
+      gain.gain.exponentialRampToValueAtTime(0.3, now + delay + 0.01)
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + delay + 0.15)
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.start(now + delay)
+      osc.stop(now + delay + 0.16)
+    })
+  } catch { /* trình duyệt chặn autoplay âm thanh trước khi có tương tác — bỏ qua, không lỗi vỡ app */ }
+}
 
 const API = (import.meta.env.VITE_API_URL || 'https://bmed1-1.onrender.com') + '/api'
 // =================================================================
@@ -71,11 +95,22 @@ export function AppProvider({ children }) {
     } catch { /* ignore */ }
   }, [])
 
+  const knownAlertIdsRef = useRef(null) // null = chưa tải lần đầu (tránh kêu ngay khi mới mở web)
+
   const fetchAlerts = useCallback(async () => {
     try {
       const res = await axios.get(`${API}/alerts`)
       // Chỉ lấy các cảnh báo chưa xử lý (is_read = false) để hiện lên tab Thông báo
       const unreadAlerts = res.data.filter(a => !a.is_read)
+
+      // Phát hiện cảnh báo MỚI (id chưa từng thấy) để phát âm thanh báo động
+      const currentIds = new Set(unreadAlerts.map(a => a.id))
+      if (knownAlertIdsRef.current !== null) {
+        const hasNew = [...currentIds].some(id => !knownAlertIdsRef.current.has(id))
+        if (hasNew) playAlertBeep()
+      }
+      knownAlertIdsRef.current = currentIds
+
       setAlerts(unreadAlerts)
     } catch { /* ignore */ }
   }, [])

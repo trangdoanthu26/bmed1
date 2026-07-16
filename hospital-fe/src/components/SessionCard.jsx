@@ -22,6 +22,7 @@ export default function SessionCard({ session }) {
   const tocDoHienTai = session.dropRate ?? 0;
   const tocDoYLenh = session.prescribedDropRate ?? 40;
   const theTichConLai = session.volumeRemaining ?? session.volumeInitial ?? 0;
+  const thoiGianConLai = session.remainingTime ?? null;
 
   // Thuật toán kiểm tra trạng thái hiển thị màu sắc tức thời tại Frontend
   const currentRate = parseFloat(tocDoHienTai)
@@ -102,6 +103,12 @@ export default function SessionCard({ session }) {
           <span>Còn lại:</span>
           <strong style={{ color: isSapHetDich ? '#ea580c' : '#0f172a' }}>{theTichConLai} ml</strong>
         </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <span>Thời gian còn lại:</span>
+          <strong style={{ color: isSapHetDich ? '#ea580c' : '#0f172a' }}>
+            {thoiGianConLai != null ? `~${thoiGianConLai} phút` : '—'}
+          </strong>
+        </div>
       </div>
 
       {/* KHỐI NÚT BẤM ĐIỀU KHIỂN LÂM SÀNG */}
@@ -113,14 +120,10 @@ export default function SessionCard({ session }) {
           ⚠️ Lỗi thiết bị
         </button>
 
-        {isLoiTocDo ? (
-          <button 
-            onClick={(e) => triggerAction(e, 'Da_Xu_Ly_Toc_Do')}
-            style={{ flex: 1, padding: '10px 12px', backgroundColor: '#10b981', border: 'none', color: '#fff', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
-          >
-            ✓ Đã xử lý
-          </button>
-        ) : (
+        {/* Khi tốc độ bất thường: không cần nút "Đã xử lý" — tình trạng này tự cập nhật
+            màu sắc/trạng thái ngay khi tốc độ thực tế trở lại bình thường, không cần
+            bác sĩ xác nhận thủ công. Chỉ hiện nút Kết thúc khi KHÔNG phải lỗi tốc độ. */}
+        {!isLoiTocDo && (
           <button 
             onClick={(e) => triggerAction(e, 'Ket_Thuc_Phien')}
             disabled={!isSapHetDich}

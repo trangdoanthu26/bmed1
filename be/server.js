@@ -178,12 +178,39 @@ async function nhanDuLieuESP(req, res) {
     const avgVolume   = buf.samples.reduce((s, x) => s + x.the_tich_con_lai, 0) / BUFFER_SIZE;
     clearBuffer(session_id);
 
-    let newStatus = session.status;
+    const prescribedRate = parseFloat(session.prescribed_drop_rate || 0);
+    const isRateOff   = prescribedRate > 0 && avgDropRate > 0 &&
+      (Math.abs(avgDropRate - prescribedRate) / prescribedRate) >= NGUONG_LECH_TOC_DO_PCT;
+    const isLowVolume = avgVolume > 0 && avgVolume <= NGUONG_SAP_HET_ML;
 
-    // Cảnh báo sắp hết
-    if (avgVolume > 0 && avgVolume <= NGUONG_SAP_HET_ML) {
+    // Cảnh báo TỐC ĐỘ — tự mở khi lệch, và QUAN TRỌNG: tự đóng khi tốc độ
+    // trở lại bình thường (không cần bác sĩ bấm xác nhận thủ công, vì cảm
+    // biến đã tự xác nhận điều đó rồi).
+    if (isRateOff) {
+      const lech = Math.abs(avgDropRate - prescribedRate) / prescribedRate;
       const [[ex]] = await conn.query(
-        "SELECT id FROM infusion_alerts WHERE session_id=? AND alert_type='sap_het' AND is_read=0 AND handled_at IS NULL LIMIT 1",
+        "SELECT id FROM infusion_alerts WHERE session_id=? AND alert_type='loi_toc_do' AND handled_at IS NULL LIMIT 1",
+        [session_id]
+      );
+      if (!ex) {
+        const huong = avgDropRate > prescribedRate ? 'nhanh hon' : 'cham hon';
+        await conn.query(
+          "INSERT INTO infusion_alerts (session_id,alert_type,message,is_read,triggered_at) VALUES (?,'loi_toc_do',?,FALSE,NOW())",
+          [session_id, 'LOI TOC DO: TB 50s ' + huong + ' ' + (lech*100).toFixed(1) + '% (do:' + avgDropRate.toFixed(1) + ' y-lenh:' + prescribedRate + ' giot/phut)']
+        );
+      }
+    } else {
+      await conn.query(
+        "UPDATE infusion_alerts SET is_read=1, handled_at=NOW(), resolved_by='He thong tu dong (toc do da tro lai binh thuong)' WHERE session_id=? AND alert_type='loi_toc_do' AND handled_at IS NULL",
+        [session_id]
+      );
+    }
+
+    // Cảnh báo SẮP HẾT — không tự đóng được (dịch chỉ vơi dần, không tự đầy
+    // lại), chỉ đóng khi kết thúc phiên (xử lý ở các endpoint /end, /error).
+    if (isLowVolume) {
+      const [[ex]] = await conn.query(
+        "SELECT id FROM infusion_alerts WHERE session_id=? AND alert_type='sap_het' AND handled_at IS NULL LIMIT 1",
         [session_id]
       );
       if (!ex) {
@@ -192,28 +219,13 @@ async function nhanDuLieuESP(req, res) {
           [session_id, 'CANH BAO: Dich sap het — con ' + avgVolume.toFixed(1) + ' ml']
         );
       }
-      if (newStatus === 'normal') newStatus = 'warning';
     }
 
-    // Cảnh báo tốc độ
-    const prescribedRate = parseFloat(session.prescribed_drop_rate || 0);
-    if (prescribedRate > 0 && avgDropRate > 0) {
-      const lech = Math.abs(avgDropRate - prescribedRate) / prescribedRate;
-      if (lech >= NGUONG_LECH_TOC_DO_PCT) {
-        const [[ex]] = await conn.query(
-          "SELECT id FROM infusion_alerts WHERE session_id=? AND alert_type='loi_toc_do' AND is_read=0 AND handled_at IS NULL LIMIT 1",
-          [session_id]
-        );
-        if (!ex) {
-          const huong = avgDropRate > prescribedRate ? 'nhanh hon' : 'cham hon';
-          await conn.query(
-            "INSERT INTO infusion_alerts (session_id,alert_type,message,is_read,triggered_at) VALUES (?,'loi_toc_do',?,FALSE,NOW())",
-            [session_id, 'LOI TOC DO: TB 50s ' + huong + ' ' + (lech*100).toFixed(1) + '% (do:' + avgDropRate.toFixed(1) + ' y-lenh:' + prescribedRate + ' giot/phut)']
-          );
-        }
-        newStatus = 'urgent';
-      }
-    }
+    // Trạng thái phiên tính lại từ đầu mỗi chu kỳ (ưu tiên urgent > warning > normal)
+    // — thay vì chỉ leo thang như trước, giờ tự trở về 'normal' khi cả 2 điều kiện đều ổn.
+    let newStatus = 'normal';
+    if (isRateOff) newStatus = 'urgent';
+    else if (isLowVolume) newStatus = 'warning';
 
     if (newStatus !== session.status) {
       await conn.query('UPDATE infusion_sessions SET status=? WHERE id=?', [newStatus, session_id]);
@@ -485,6 +497,10 @@ app.patch('/api/sessions/:id/end', requireAuth, async (req, res) => {
     if (!s) return res.status(404).json({ error: 'Khong tim thay phien' });
     await pool.query("UPDATE infusion_sessions SET status='completed',end_at=NOW() WHERE id=?", [req.params.id]);
     await pool.query("UPDATE infusion_devices SET status='available' WHERE id=?", [s.device_id]);
+    await pool.query(
+      "UPDATE infusion_alerts SET is_read=1, handled_at=NOW(), resolved_by=? WHERE session_id=? AND handled_at IS NULL",
+      [(req.user?.name || 'Tai khoan') + ' - da ket thuc phien truyen', req.params.id]
+    );
     clearBuffer(req.params.id);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -499,6 +515,10 @@ app.patch('/api/sessions/:id/device-error', requireAuth, async (req, res) => {
     await pool.query(
       "INSERT INTO infusion_issues (session_id,reported_by,issue_type,description,status) VALUES (?,'"+req.user.userId+"','device_error','Loi thiet bi - bao cao tu Y ta','pending')",
       [req.params.id]
+    );
+    await pool.query(
+      "UPDATE infusion_alerts SET is_read=1, handled_at=NOW(), resolved_by=? WHERE session_id=? AND handled_at IS NULL",
+      [(req.user?.name || 'Tai khoan') + ' - bao loi thiet bi', req.params.id]
     );
     clearBuffer(req.params.id);
     res.json({ success: true });
@@ -515,6 +535,10 @@ app.patch('/api/sessions/:id/error', requireAuth, async (req, res) => {
     await pool.query(
       "INSERT INTO infusion_issues (session_id,reported_by,issue_type,description,status) VALUES (?,?,'device_error','Loi thiet bi','pending')",
       [req.params.id, req.user.userId]
+    );
+    await pool.query(
+      "UPDATE infusion_alerts SET is_read=1, handled_at=NOW(), resolved_by=? WHERE session_id=? AND handled_at IS NULL",
+      [(req.user?.name || 'Tai khoan') + ' - bao loi thiet bi', req.params.id]
     );
     clearBuffer(req.params.id);
     res.json({ success: true });
@@ -553,6 +577,25 @@ app.get('/api/alerts', requireAuth, async (req, res) => {
     );
     res.json(rows);
   } catch (err) { res.json([]); }
+});
+
+// Lịch sử các cảnh báo ĐÃ XỬ LÝ — phục vụ tab "Lịch sử" bên Notifications
+app.get('/api/alerts/history', requireAuth, async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT a.id, a.alert_type, a.message, a.triggered_at, a.handled_at, a.resolved_by,
+              s.id AS session_id,
+              p.full_name AS patientName, p.room_number AS room, p.bed_number AS bed,
+              d.mac_address AS deviceId, d.label AS deviceLabel
+       FROM infusion_alerts a
+       JOIN infusion_sessions s ON a.session_id=s.id
+       JOIN patient_profiles  p ON s.patient_id=p.id
+       JOIN infusion_devices  d ON s.device_id=d.id
+       WHERE a.handled_at IS NOT NULL
+       ORDER BY a.handled_at DESC LIMIT 200`
+    );
+    res.json(rows);
+  } catch (err) { console.error('[GET /api/alerts/history]', err.message); res.json([]); }
 });
 
 app.patch('/api/alerts/:id/read', requireAuth, async (req, res) => {
